@@ -1,1 +1,3 @@
-# status.rw0.pw
+# Status
+
+Hardware status / preview standalone page
