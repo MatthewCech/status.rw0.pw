@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+    	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+
+		<!-- Setup title and favicon, along with site info -->
+		<title>Stats</title>
+		<meta name="author" content="Matthew Cech">
+		<link rel="icon" href="/favicon.ico">
+		<meta name="description" content="Remotely view info for a selection of tracked servers">
+
+		<!-- External links -->
+		<link href="https://fonts.googleapis.com/css?family=Major+Mono+Display|Open+Sans" rel="stylesheet">
+		<link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+		<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
+	</head>
+
+	<style>
+		body {
+			/* This background pattern is downloaded from www.subtlepatterns.com - If you need more, that's where to get'em! */
+			background-image: url('cork-wallet.png');
+		}
+
+		html, body {
+			height: 100%;
+			width: 100%;
+			margin: 0px;
+		}
+
+		h1, h2, h3, h4, h5, h6 {
+			font-family: 'Major Mono Display', monospace;
+		}
+
+		h6 {
+			font-size: 10px;
+		}
+
+		.status-body {
+			text-align: center;
+			height: 100%;
+			width: 100%;
+		}
+
+		.status-title {
+			text-align: center;
+			font-family: 'Major Mono Display', monospace;
+		}
+
+		.status-title h1 {
+			padding-top: 1em;
+		}
+
+		.status-panels {
+			margin-left: auto;
+			margin-right: auto;
+			margin-bottom: 40px;
+		}
+
+		.status-box {
+			display: inline-block;
+			width: 250px;
+			height: 325px;
+			margin: 10px;
+			margin-top: 50px;
+			border-radius: 7px;
+		}
+
+		.status-box hr {
+			margin-top: 3px;
+			margin-bottom: 10px;
+		}
+
+		.status-box h6 {
+			margin-top: 0px;
+			margin-bottom: 2px;
+			text-align: left;
+		}
+
+		.status-box-title {
+			height: 1.5em;
+			position: relative;
+			background-color: rgba(0, 0, 0, .1);
+			border-top-left-radius: 7px;
+			border-top-right-radius: 7px;
+			text-align: center;
+		}
+
+		.status-box-title-text {
+			position: relative;
+			font-family: 'Major Mono Display', monospace;
+		}
+
+		.status-box-graph {
+			margin-top: 5px;
+		}
+
+		.status-box-canvas {
+			background-color: rgba(0, 0, 0, .1);
+		}
+
+	</style>
+
+	<body>
+		<div class="status-body">
+			<div class="container">
+				<div class="status-title">
+					<h1>server status</h1>
+					<h6>next tick in: <span id="tick">0.0</span>s</h6>
+				</div>
+				<div id="preview-panels" class="status-panels d-flex justify-content-center flex-wrap"></div>
+			</div>
+
+			<h6>View on <a style="text-decoration: none;" href="https://github.com/MatthewCech/status.rw0.pw">GitHub</a></h6>
+		</div>
+	</body>
+
+	<script type="text/javascript">
+
+		// Variables
+		let tickRate = 5000;       // MS between API requests
+		let displayTickRate = 100; // MS between updating seconds left
+		let displayTicks = 0;      // Times display updated since last API request
+		let allKeys = [];          // Stores all keys for machines we're looking up
+
+		// Creates panels with specific IDs for lookup later based on the
+		// specified key. Returns a div designed to be tackd on to others. 
+		function createPanel(key) {
+			let baseline = `
+			<div class="status-box">
+				<div class="status-box-title">
+					<h5 class="status-box-title-text">${key}</h5>
+				</div>
+				<hr/>
+				<div class="status-box-graph">
+					<h6><strong>cpu usage:</strong> <span id="cpu-percentage-${key}"></span><br/>
+						user: <span id="cpu-user-${key}"></span><br/>
+						system: <span id="cpu-system-${key}"></span>
+					</h6>
+					<canvas id="cpuCanvas-${key}" class="status-box-canvas" width="250" height="100">
+				</div>
+				<div class="status-box-graph">
+					<h6><strong>ram usage:</strong> <span id="ram-percentage-${key}"></span><br/>
+						in use: <span id="ram-used-${key}"></span> (cached: <span id="ram-cached-${key}"></span>)<br/>
+						total: <span id="ram-total-${key}"></span><br/>
+						
+					</h6>
+					<canvas id="ramCanvas-${key}" class="status-box-canvas" width="250" height="100">
+				</div>
+			</div>
+			`;
+
+			return baseline;
+		}
+
+		// Called as the result of error with XMLHttpRequest
+		function onRequestError(err) {
+			console.log('Fetch Error:', err );
+		}
+
+		// Clears all data and re-creates page to refresh the values,
+		// and creates all the stats panels
+		function onStatsAll() {
+			console.log("pingasdfing");
+			let panels = document.getElementById('preview-panels');
+			allKeys = JSON.parse(this.responseText).keys;
+
+			// Re-create all panel divs
+			panels.innerHTML = "";
+			for(let i = 0; i < allKeys.length; i = i + 1) {
+				panels.innerHTML += createPanel(allKeys[i]);
+			}
+
+			// Populate all
+			for(let i = 0; i < allKeys.length; i = i + 1) {
+				pingServerForStats(allKeys[i]);
+			}
+		}
+
+		function pingServerForAll() {
+			let url = `https://rw0.pw/api/v1/stats/all`;
+			let httpReq = new XMLHttpRequest();
+
+			httpReq.onload = onStatsAll;
+			httpReq.onerror = onRequestError;
+			httpReq.open('GET', url, true);
+	    	httpReq.setRequestHeader('Content-type', 'application/json');
+			httpReq.send();
+		}
+
+		function onStatsKey() {
+			let stats = JSON.parse(this.responseText);
+			let ramPercentage = document.getElementById(`ram-percentage-${stats.key}`);
+			let ramTotal = document.getElementById(`ram-total-${stats.key}`);
+			let ramUsed = document.getElementById(`ram-used-${stats.key}`);
+			let ramCached = document.getElementById(`ram-cached-${stats.key}`);
+			let cpuPercentage = document.getElementById(`cpu-percentage-${stats.key}`);
+			let cpuUser = document.getElementById(`cpu-user-${stats.key}`);
+			let cpuSystem = document.getElementById(`cpu-system-${stats.key}`);
+
+			let ramDecimals = 2;
+			let cpuDecimals = 2;
+			let ramLoad = stats.ramLoadUsed[0] + stats.ramLoadCached[0];
+
+			ramPercentage.innerHTML = `${(stats.ramLoadUsed[0] / stats.ramMax * 100).toFixed(ramDecimals)}%`;
+			ramTotal.innerHTML = `${(stats.ramMax / 1024).toFixed(ramDecimals)}gb`;
+			ramUsed.innerHTML = `${(stats.ramLoadUsed[0] / 1024).toFixed(ramDecimals)}gb`;
+			ramCached.innerHTML = `${(stats.ramLoadCached[0] / 1024).toFixed(ramDecimals)}gb`;
+			cpuPercentage.innerHTML = `${(stats.cpuLoadSystem[0] + stats.cpuLoadUser[0]).toFixed(2)}%`;
+			cpuUser.innerHTML = `${stats.cpuLoadUser[0].toFixed(2)}%`;
+			cpuSystem.innerHTML = `${stats.cpuLoadSystem[0].toFixed(2)}%`;
+
+			let cpuTotalVals = [];
+			for(let i = 0; i < stats.cpuLoadUser.length && i < stats.cpuLoadSystem.length; ++i) {
+				cpuTotalVals.push(stats.cpuLoadSystem[i] + stats.cpuLoadUser[i]);
+			}
+
+			let ramTotalVals = []
+			for(let i = 0; i < stats.cpuLoadUser.length && i < stats.cpuLoadSystem.length; ++i) {
+				ramTotalVals.push(stats.ramLoadUsed[i] + stats.ramLoadCached[i]);
+			}
+
+			let primaryColor = "#404040";
+			let secondaryColor = "#6896F2";
+
+			redrawChart(`cpuCanvas-${stats.key}`, cpuTotalVals, 100, primaryColor, true);
+			redrawChart(`cpuCanvas-${stats.key}`, stats.cpuLoadSystem, 100, secondaryColor);
+			redrawChart(`ramCanvas-${stats.key}`, ramTotalVals, stats.ramMax, secondaryColor, true);//"#978AEA", true);//"#404040", true);
+			redrawChart(`ramCanvas-${stats.key}`, stats.ramLoadUsed, stats.ramMax, primaryColor);//"#978AEA");
+//			redrawChart(`ramCanvas-${stats.key}`, stats.ramLoadCached, stats.ramMax, "#978AEA");
+		}
+
+		function pingServerForStats(key) {
+			console.log("pinging");
+			let url = `https://rw0.pw/api/v1/stats/get/${key}`;
+			let httpReq = new XMLHttpRequest();
+
+			httpReq.onload = onStatsKey;
+			httpReq.onerror = onRequestError;
+			httpReq.open('POST', url, true);
+	    	httpReq.setRequestHeader('Content-type', 'application/json');
+			httpReq.send();
+		}
+
+		// Redraws the CPU line
+		function redrawChart(elementID, dataArray, dataMax, color, shouldClear) {
+			let c = document.getElementById(elementID);
+			let ctx = c.getContext("2d");
+			const width = 250;
+			const height = 100;
+			const samples = 50;
+			const sampleWidth = width/samples;
+
+			// Clear
+			if(shouldClear)
+				ctx.clearRect(0, 0, c.width, c.height);
+
+			if(color)
+				ctx.strokeStyle = color;
+			else
+				ctx.strokeStyle = "#000000";
+
+			// Redraw
+			for(let i = 0; i < dataArray.length; i = i + 1) {
+				ctx.beginPath();
+				let last = i - 1;
+
+				if(last < 0)
+					last = 0;
+
+				ctx.moveTo(width - i * sampleWidth, (dataMax - dataArray[last]) / dataMax * height);
+				ctx.lineTo(width - (i + 1) * sampleWidth, (dataMax - dataArray[i]) / dataMax * height);
+				ctx.stroke();
+			}
+		}
+
+		// Ping constantly every so often after doing a setup request
+		pingServerForAll();
+		setInterval(function() {
+			displayTicks = 0;
+
+			for(let i = 0; i < allKeys.length; i = i + 1) {
+				pingServerForStats(allKeys[i]);
+			}
+		}, tickRate);
+
+		// Updates tick timer on site to display what's left
+		setInterval(function() {
+			displayTicks = displayTicks + 1;
+			let toDisplay = (tickRate - displayTickRate * displayTicks) / 1000;
+
+			if(toDisplay < 0)
+				toDisplay = 0;
+
+			document.getElementById('tick').innerHTML = toDisplay.toFixed(1);
+		}, displayTickRate);
+
+	</script>
+</html>
